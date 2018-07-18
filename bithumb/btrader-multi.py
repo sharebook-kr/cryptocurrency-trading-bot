@@ -39,7 +39,7 @@ COIN_NUMS = 10                                      # 분산 투자 코인 개�
 DUAL_NOISE_LIMIT = 0.6                              # 듀얼 노이즈
 LARRY_K = 0.4
 
-TRAILLING_STOP_MIN_PROOFIT = 0.3                    # 최소 30% 이상 수익이 발생한 경우에 Traillig Stop 동작
+TRAILLING_STOP_MIN_PROOFIT = 0.4                    # 최소 40% 이상 수익이 발생한 경우에 Traillig Stop 동작
 TRAILLING_STOP_GAP = 0.05                           # 최고점 대비 5% 하락시 매도
 
 
@@ -314,6 +314,7 @@ def try_trailling_stop(portfolio, prices, targets, holdings, high_prices):
                 if unit >= min_order:
                     if DEBUG is False:
                         ret = bithumb.sell_market_order(ticker, unit)
+                        time.sleep(INTERVAL)
                     else:
                         print("trailing stop", ticker, unit)
 
@@ -356,7 +357,7 @@ def update_high_prices(tickers, high_prices, cur_prices):
         pass
 
 
-def print_status(now, tickers, prices, targets, high_prices):
+def print_status(portfolio, now, tickers, prices, targets, high_prices):
     '''
     코인별 현재 상태를 출력
     :param tickers: 티커 리스트
@@ -369,6 +370,7 @@ def print_status(now, tickers, prices, targets, high_prices):
     try:
         print("_" * 80)
         print(now)
+        print(portfolio)
         for ticker in tickers:
             print("{:<6} 목표가: {:>8} 현재가: {:>8} 고가: {:>8}".format(ticker, int(targets[ticker]), int(prices[ticker]), int(high_prices[ticker])))
     except:
@@ -419,14 +421,14 @@ while True:
     # 현재가 조회
     prices = inquiry_cur_prices(tickers)
     update_high_prices(tickers, high_prices, prices)
-    print_status(now, tickers, prices, targets, high_prices)
+    print_status(portfolio, now, tickers, prices, targets, high_prices)
 
     # 매수
     if prices is not None:
         try_buy(portfolio, prices, targets, mas, budget_per_coin, holdings, high_prices)
 
     # 매도 (익절)
-    try_trailling_stop(tickers, prices, targets, holdings, high_prices)
+    try_trailling_stop(portfolio, prices, targets, holdings, high_prices)
 
     time.sleep(INTERVAL)
 
