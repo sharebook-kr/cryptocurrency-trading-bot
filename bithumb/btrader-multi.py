@@ -402,6 +402,7 @@ while True:
     # 새로운 거래일에 대한 데이터 셋업 (00:00:00 ~ 00:00:10)
     if setup_time1 < now < setup_time2:
         tickers = pybithumb.get_tickers()                                   # 티커 목록 갱신
+        try_sell(tickers)                                                   # 매도 되지 않은 코인에 대해서 한 번 더 매도 시도
         targets = inquiry_targets(tickers)                                  # 목표가 갱신
         mas = inquiry_moving_average(tickers)                               # 이동평균 갱신
         budget_per_coin = cal_budget()                                      # 코인별 최대 배팅 금액 계산
