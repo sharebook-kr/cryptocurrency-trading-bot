@@ -255,11 +255,11 @@ def retry_sell(ticker, unit, retry_cnt=10):
         while ret is None and retry_cnt > 0:
             if DEBUG is False:
                 ret = bithumb.sell_market_order(ticker, unit)
+                time.sleep(INTERVAL)
             else:
                 print("SELL API CALLED", ticker, unit)
 
             retry_cnt = retry_cnt - 1
-            time.sleep(INTERVAL)
     except:
         pass
 
@@ -278,6 +278,7 @@ def try_sell(tickers):
             if unit >= min_order:
                 if DEBUG is False:
                     ret = bithumb.sell_market_order(ticker, unit)
+                    time.sleep(INTERVAL)
                 else:
                     print("SELL API CALLED", ticker, unit)
 
