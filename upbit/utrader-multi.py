@@ -218,7 +218,7 @@ def try_buy(portfolio, prices, targets, ma5s, budget_per_coin, holdings, high_pr
             # 3) 현재가가 5일 이동평균 이상이고
             # 4) 해당 코인을 보유하지 않았을 때
             if price >= target and high <= target * 1.02  and price >= ma5 and holdings[ticker] is False:
-                orderbook = pyupbit.get_orderbook(ticker)['orderbook_units'][0]
+                orderbook = pyupbit.get_orderbook(ticker)[0]['orderbook_units'][0]
                 sell_price = int(orderbook['ask_price'])
                 sell_unit = orderbook['ask_size']
                 unit = budget_per_coin/float(sell_price)
@@ -232,7 +232,7 @@ def try_buy(portfolio, prices, targets, ma5s, budget_per_coin, holdings, high_pr
                 time.sleep(INTERVAL)
                 holdings[ticker] = True
     except:
-        pass
+        print("try buy error");
 
 
 def retry_sell(ticker, unit, retry_cnt=10):
@@ -246,11 +246,12 @@ def retry_sell(ticker, unit, retry_cnt=10):
     try:
         ret = None
         while ret is None and retry_cnt > 0:
+            orderbook = pyupbit.get_orderbook(ticker)[0]['orderbook_units'][0]
+            buy_price = int(orderbook['bid_price'])                                 # 최우선 매수가
+            buy_unit = orderbook['bid_size']                                        # 최우선 매수수량
+            min_unit = min(unit, buy_unit)
+
             if DEBUG is False:
-                orderbook = pyupbit.get_orderbook(ticker)['orderbook_units'][0]
-                buy_price = int(orderbook['bid_price'])                                 # 최우선 매수가
-                buy_unit = orderbook['bid_size']                                        # 최우선 매수수량
-                min_unit = min(unit, buy_unit)
                 ret = upbit.sell_limit_order(ticker, buy_price, min_unit)
                 time.sleep(INTERVAL)
             else:
@@ -258,8 +259,7 @@ def retry_sell(ticker, unit, retry_cnt=10):
 
             retry_cnt = retry_cnt - 1
     except:
-        pass
-
+        print("retry sell error")
 
 def try_sell(tickers):
     '''
@@ -268,31 +268,43 @@ def try_sell(tickers):
     :return:
     '''
     try:
+        # 잔고조회
+        units = get_blance_unit(tickers)
+
         for ticker in tickers:
             short_ticker = ticker.split('-')[1]
-            balances = upbit.get_balances()
-            unit = 0
+            unit = units.get(ticker, 0)                     # 보유 수량
 
-            for balance in balances:
-                if balance['currency'] == short_ticker:
-                    unit = float(balance['balance'])
-                    break
+            if unit > 0:
+                orderbook = pyupbit.get_orderbook(ticker)[0]['orderbook_units'][0]
+                buy_price = int(orderbook['bid_price'])                                 # 최우선 매수가
+                buy_unit = orderbook['bid_size']                                        # 최우선 매수수량
+                min_unit = min(unit, buy_unit)
 
-            if unit >= 0:
                 if DEBUG is False:
-                    orderbook = pyupbit.get_orderbook(ticker)['orderbook_units'][0]
-                    buy_price = int(orderbook['bid_price'])                                 # 최우선 매수가
-                    buy_unit = orderbook['bid_size']                                        # 최우선 매수수량
-                    min_unit = min(unit, buy_unit)
                     ret = upbit.sell_limit_order(ticker, buy_price, min_unit)
                     time.sleep(INTERVAL)
+
+                    if ret is None:
+                        retry_sell(ticker, unit, 10)
                 else:
                     print("SELL API CALLED", ticker, buy_price, min_unit)
-
-                if ret is None:
-                    retry_sell(ticker, unit, 10)
     except:
-        pass
+        print("try sell error")
+
+
+def get_blance_unit(tickers):
+    balances = upbit.get_balances()[0]
+    units = {ticker:0 for ticker in tickers}
+
+    for balance in balances:
+        if balance['currency'] == "KRW":
+            continue
+
+        ticker = "KRW-" + balance['currency']        # XRP -> KRW-XRP
+        unit = float(balance['balance'])
+        units[ticker] = unit
+    return units
 
 
 def try_trailling_stop(portfolio, prices, targets, holdings, high_prices):
@@ -306,35 +318,37 @@ def try_trailling_stop(portfolio, prices, targets, holdings, high_prices):
     :return:
     '''
     try:
+        # 잔고 조회
+        units = get_blance_unit(portfolio)
+
         for ticker in portfolio:
             price = prices[ticker]                          # 현재가
             target = targets[ticker]                        # 매수가
             high_price = high_prices[ticker]                # 당일 최고가
+            unit = units.get(ticker, 0)                     # 보유 수량
 
             gain = (price - target) / target                # 이익률
             gap_from_high = 1 - (price/high_price)          # 고점과 현재가 사이의 갭
 
             if gain >= TRAILLING_STOP_MIN_PROOFIT and gap_from_high >= TRAILLING_STOP_GAP and holdings[ticker] is True:
-                unit = upbit.get_balances(ticker)[0]
+                if unit > 0:
+                    orderbook = pyupbit.get_orderbook(ticker)[0]['orderbook_units'][0]
+                    buy_price = int(orderbook['bid_price'])                                 # 최우선 매수가
+                    buy_unit = orderbook['bid_size']                                        # 최우선 매수수량
+                    min_unit = min(unit, buy_unit)
 
-                if unit >= 0:
                     if DEBUG is False:
-                        orderbook = pyupbit.get_orderbook(ticker)['orderbook_units'][0]
-                        buy_price = int(orderbook['bid_price'])                                 # 최우선 매수가
-                        buy_unit = orderbook['bid_size']                                        # 최우선 매수수량
-                        min_unit = min(unit, buy_unit)
                         ret = upbit.sell_limit_order(ticker, buy_price, min_unit)
                         time.sleep(INTERVAL)
+
+                        if ret is None:
+                            retry_sell(ticker, unit, 10)
                     else:
                         print("trailing stop", ticker, buy_price, min_unit)
 
-                    if ret is None:
-                        retry_sell(ticker, unit, 10)
-
                     holdings[ticker] = False
     except:
-        pass
-
+        print("try trailing stop error")
 
 def cal_budget():
     '''
@@ -448,6 +462,5 @@ while True:
     try_trailling_stop(portfolio, prices, targets, holdings, high_prices)
 
     time.sleep(INTERVAL)
-
 
 
