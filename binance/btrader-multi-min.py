@@ -190,6 +190,7 @@ class PortFolioThread:
     @threadable
     def _execute(self, binance, ticker_list, time_unit, window, period):
         while(1):
+            self.portfolio = {}
             noise_list = []
             for ticker in ticker_list:
                 df = binance.get_ohlcs(ticker, time_unit, window)
@@ -228,21 +229,28 @@ if __name__ == "__main__":
         print("---"*5)
         print(now)
         for ticker in portfoio:
-            print("{}: 현재가{:>4.2f} / 목표가{:>4.2f} / 이평선5 {:4.2f}".format(ticker, current_price[ticker], ma5h.target_price[ticker], ma5h.average[ticker]))
+            is_hold = binance.restriction[ticker]['hold']
+            if is_hold:
+                disp = 'x'
+            else:
+                disp = 'o'
+            print("{:9>}-{}: 현재가:{:>4.2f} / 목표가:{:>4.2f} / 이평선5:{:>4.2f}".format(
+                ticker, disp, current_price[ticker], ma5h.target_price[ticker], ma5h.average[ticker]))
             # 매수 조건
             # 1) 현재가가 목표가 이상
             # 2) 현재가가 5시간 이동평균 이상
             # 3) 코인을 보유하지 않음
-            if (ma5h.target_price[ticker] < current_price[ticker]) and (ma5h.average[ticker] < current_price[ticker])\
+            if (ma5h.target_price[ticker] <= current_price[ticker]) and (ma5h.average[ticker] <= current_price[ticker])\
                     and binance.restriction[ticker]['hold'] is False:
 
                 if DEBUG :
                     print("매수")
-                    print("{}: 현재가{:>4.2f} / 목표가{:>4.2f}".format(ticker, current_price[ticker], ma5h.target_price[ticker]))
+                    print("{}: 현재가:{:>4.2f} / 목표가:{:>4.2f}".format(ticker, current_price[ticker], ma5h.target_price[ticker]))
                 else:
+                    print(" ## {}: 매수".format(ticker))
                     price = current_price[ticker]
                     unit = binance.market_buy(ticker, price)
                     # 매도 주문을 1% 상승 가격에 걸어 놓는다.
-                    binance.sell_and_delay_cancel(ticker, price * 1.1, unit)
+                    binance.sell_and_delay_cancel(ticker, price * 1.01, unit)
 
         time.sleep(5)
