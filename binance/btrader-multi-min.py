@@ -5,9 +5,18 @@ import threading
 import datetime
 from pandas import DataFrame
 
+import logging
+import inspect
+logger = logging.getLogger("logger")
+logger.setLevel(logging.DEBUG)
+stream_handler = logging.StreamHandler()
+logger.addHandler(stream_handler)
+file_handler = logging.FileHandler("log.txt")
+logger.addHandler(file_handler)
+
 DELAY = 1
 COIN_NUMS = 5
-DUAL_NOISE_LIMIT = 0.6                              # 듀얼 노이즈
+DUAL_NOISE_LIMIT = 0.6
 LARRY_K = 0.4
 DEBUG = False
 
@@ -20,6 +29,33 @@ def threadable(fn):
     return run
 
 
+def error_check(fun):
+    def wrapper(self, *args, **kwargs):
+        # 에러가 날 경우 20 (20초)번까지 반복 요청
+        max_retry_cnt = 10
+        for i in range(max_retry_cnt):
+            try:
+                ret = fun(self, *args, **kwargs)
+                return ret
+            except KeyError as e:
+                print("{} Warning: Unknown key ({})".format(self.name, str(e)))
+            except TypeError as e:
+                # traceback.print_exc()
+                print("{} Warning: {}".format(self.name, str(e)))
+            except AttributeError as e:
+                print("{} Warning: {}".format(self.name, str(e)))
+            except IndexError as e:
+                print("{} Warning: {}".format(self.name, str(e)))
+            except RuntimeWarning :
+                pass
+            print("[{}] {} retry - {}: ".format(self.name, i, kwargs))
+            time.sleep(1)
+
+        # 정해진 횟수의 시도가 실패할 경우 system 종료
+        print("MAX RETRY:", max_retry_cnt)
+        raise SystemExit
+    return wrapper
+
 class Binance:
     '''
     Thread safe wrapper
@@ -31,7 +67,8 @@ class Binance:
             secret = lines[1].strip()
             self.binance = ccxt.binance({
                 'apiKey': key,
-                'secret': secret
+                'secret': secret,
+                'options': {'adjustForTimeDifference': True}
             })
         self.lock = threading.Lock()
 
@@ -48,63 +85,51 @@ class Binance:
             self.restriction[k]['precision'] = v['precision']['amount']
             self.restriction[k]['hold'] = False
 
-        # 디버깅 정보
-        self.statistic = open("result.txt", "w")
-        self.statistic_lock = threading.Lock()
-        self.acc_earning = {}
-        self.buy_total = {}
-        for k, v in resp.items():
-            self.acc_earning[k] = 1
-            self.buy_total[k] = 0
-
     @threadable
     def sell_and_delay_cancel(self, ticker, price, unit):
+        time.sleep(2)
         order_id = self.limit_sell(ticker, price, unit)
-        # 15분후 주문 취소
-        time.sleep(60 * 15)
+        # 3분 후 주문 취소
+        time.sleep(60 * 3)
         self.cancel_order(ticker, order_id)
 
         remaining_unit = self.get_remaining(ticker, order_id)
-        self.market_sell(ticker, remaining_unit)
-        filled_unit = (unit - remaining_unit)
-
         if not remaining_unit > 0:
-            current_price = self.binance.fetch_tickers()[ticker]['ask']
-            sell_total = (filled_unit * price + remaining_unit * current_price) * 0.999
-        else:
-            sell_total = price * unit * 0.000
-
-        # 디버깅을 위한 로그 메시지 덤프
-        earning_ratio = sell_total / self.buy_total[ticker]
-        self.acc_earning *= earning_ratio
-        self.statistic_lock.acquire()
-        self.statistic.write(
-            "[{:9}] 매수:{:3.4f} 매도:{:3.4f} 수익금:{ 6.2f} 수익률:{:2.2f}%  누적:{:2.2f}%".
-            format(ticker, self.buy_total[ticker], sell_total, sell_total - self.buy_total[ticker],earning_ratio, self.acc_earning[ticker]))
-        self.statistic_lock.release()
+            self.market_sell(ticker, remaining_unit)
 
         binance.restriction[ticker]['hold'] = False
 
+    @error_check
     def cancel_order(self, ticker, order_id):
         self.lock.acquire()
         try:
+            logger.info("{} ".format(inspect.stack()[0][3]))
+            logger.debug(" - ticker {} order_id {}".format(ticker, order_id))
             self.binance.cancel_order(order_id, ticker)
         except OrderNotFound:
             pass
         self.lock.release()
 
+    @error_check
     def get_remaining(self, ticker, order_id):
         self.lock.acquire()
+        logger.info("{} ".format(inspect.stack()[0][3]))
+        logger.debug(" - ticker {} order_id {}".format(ticker, order_id))
         resp = self.binance.fetch_order(order_id, ticker)
         self.lock.release()
         return resp['remaining']
 
+    @error_check
     def limit_sell(self, ticker, price, quanity):
         self.lock.acquire()
+        logger.info("{} ".format(inspect.stack()[0][3]))
+        logger.debug(" - ticker {} price {} quanity {}".format(ticker, price, quanity))
         resp = self.binance.create_limit_sell_order(ticker, quanity, price)
+        logger.debug(" - ticker {} order_id {}".format(ticker, resp['info']['orderId']))
         self.lock.release()
         return resp['info']['orderId']
 
+    @error_check
     def market_buy(self, ticker, price):
         unit = 0
         self.lock.acquire()
@@ -112,27 +137,34 @@ class Binance:
         if usdt_balance >= self.min_budget:
             unit = self.min_budget / float(price)
             unit = round(unit, self.restriction[ticker]['precision'])
-            self.binance.create_market_buy_order(ticker, unit)
+            logger.info("{} ".format(inspect.stack()[0][3]))
+            logger.debug(" - ticker {} price {} quanity {}".format(ticker, price, unit))
+            resp = self.binance.create_market_buy_order(ticker, unit)
+            logger.debug(" - ticker {} order_id {}".format(ticker, resp['info']['orderId']))
             # 수수료 0.001
             unit *= 0.999
-            # 수수료 포함 매수 금액
-            self.buy_total[ticker] = price * unit * 0.999
             binance.restriction[ticker]['hold'] = True
         self.lock.release()
         return unit
 
+    @error_check
     def market_sell(self, ticker, unit):
         self.lock.acquire()
+        logger.info("{} ".format(inspect.stack()[0][3]))
+        logger.debug(" - ticker {} quanity {}".format(ticker, unit))
         self.binance.create_market_sell_order(ticker, unit)
         binance.restriction[ticker]['hold'] = False
         self.lock.release()
 
+    @error_check
     def get_current_prices(self, ticker_list):
         self.lock.acquire()
+        logger.info("{} ".format(inspect.stack()[0][3]))
         resp = self.binance.fetch_tickers()
         self.lock.release()
         return {ticker: resp[ticker]['ask'] for ticker in ticker_list}
 
+    @error_check
     def get_ohlcs(self, ticker, time_unit, limit):
         self.lock.acquire()
         resp = self.binance.fetch_ohlcv(ticker, time_unit, limit=limit)
@@ -141,6 +173,7 @@ class Binance:
             resp[i][0] = datetime.datetime.fromtimestamp(int(resp[i][0] / 1000)).strftime('%Y-%m-%d %H:%M:%S')
         return DataFrame(resp, columns=['date', 'open', 'high', 'low', 'close', 'volume'])
 
+    @error_check
     def get_tickers(self, market="USDT"):
         '''
         :return: 마켓이 지원하는 ticker의 리스트를 반환
@@ -150,6 +183,7 @@ class Binance:
         self.lock.release()
         return [x['symbol'] for x in response if x['id'].endswith(market)]
 
+    @error_check
     def _get_budget(self):
         self.lock.acquire()
         usdt_balance = self.binance.fetch_free_balance()['USDT']
@@ -158,7 +192,7 @@ class Binance:
         return budget_per_coin
 
 
-class MovingAverageThread:
+class TargetPriceThread:
     '''
     '''
     def __init__(self, binance, ticker_list, time_unit, window, period):
@@ -207,6 +241,7 @@ class PortFolioThread:
                     self.portfolio[x[0]] = x[1]
             time.sleep(period)
 
+
 if __name__ == "__main__":
 
     binance = Binance()
@@ -215,9 +250,9 @@ if __name__ == "__main__":
     ticker_list = binance.get_tickers("USDT")
 
     # 백그라운드 반복 실행
-    # - 60 분에 이동평균을 업데이트한다
+    # - 6 분에 이동평균을 업데이트한다
     # - 5 분에 한 번씩 포트 폴리오를 재선정한다
-    ma5h = MovingAverageThread(binance, ticker_list, "1h", 5, 3600)
+    ma5h = TargetPriceThread(binance, ticker_list, "1m", 3, 360)
     pf3m = PortFolioThread(binance, ticker_list, "1m", 3, 60 * 5)
 
 
@@ -234,14 +269,13 @@ if __name__ == "__main__":
                 disp = 'x'
             else:
                 disp = 'o'
-            print("{:9>}-{}: 현재가:{:>4.2f} / 목표가:{:>4.2f} / 이평선5:{:>4.2f}".format(
-                ticker, disp, current_price[ticker], ma5h.target_price[ticker], ma5h.average[ticker]))
+            print("{:9>}-{}: 현재가:{:>4.2f} / 목표가:{:>4.2f}".format(
+                ticker, disp, current_price[ticker], ma5h.target_price[ticker]))
+
             # 매수 조건
             # 1) 현재가가 목표가 이상
-            # 2) 현재가가 5시간 이동평균 이상
             # 3) 코인을 보유하지 않음
-            if (ma5h.target_price[ticker] <= current_price[ticker]) and (ma5h.average[ticker] <= current_price[ticker])\
-                    and binance.restriction[ticker]['hold'] is False:
+            if (ma5h.target_price[ticker] <= current_price[ticker]) and binance.restriction[ticker]['hold'] is False:
 
                 if DEBUG :
                     print("매수")
