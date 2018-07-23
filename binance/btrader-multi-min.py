@@ -73,7 +73,7 @@ class Binance:
         self.lock = threading.Lock()
 
         # 1회 주문에 사용될 예산을 구한다
-        self.min_budget = self._get_budget()
+        self.min_budget = self._get_budget() / 10
 
         # 제약 조건을 받아온다
         resp = self.binance.load_markets()
@@ -86,13 +86,10 @@ class Binance:
             self.restriction[k]['hold'] = False
 
     @threadable
-    def sell_and_delay_cancel(self, ticker, price, unit):
-        time.sleep(2)
-        order_id = self.limit_sell(ticker, price, unit)
+    def delay_cancel(self, ticker, order_id):
         # 3분 후 주문 취소
         time.sleep(60 * 3)
         self.cancel_order(ticker, order_id)
-
         remaining_unit = self.get_remaining(ticker, order_id)
         if not remaining_unit > 0:
             self.market_sell(ticker, remaining_unit)
@@ -139,13 +136,13 @@ class Binance:
             unit = round(unit, self.restriction[ticker]['precision'])
             logger.info("{} ".format(inspect.stack()[0][3]))
             logger.debug(" - ticker {} price {} quanity {}".format(ticker, price, unit))
-            resp = self.binance.create_market_buy_order(ticker, unit)
+            self.binance.create_market_buy_order(ticker, unit)
             logger.debug(" - ticker {} order_id {}".format(ticker, resp['info']['orderId']))
             # 수수료 0.001
-            unit *= 0.999
+            resp = self.binance.fetch_balance()
             binance.restriction[ticker]['hold'] = True
         self.lock.release()
-        return unit
+        return resp[ticker.split('/')[0]]['free']
 
     @error_check
     def market_sell(self, ticker, unit):
@@ -192,11 +189,12 @@ class Binance:
         return budget_per_coin
 
 
-class TargetPriceThread:
+class HistoryThread:
     '''
     '''
     def __init__(self, binance, ticker_list, time_unit, window, period):
-        self.average = {}
+        self.ma3 = {}
+        self.ma6 = {}
         self.target_price = {}
         self._execute(binance, ticker_list, time_unit, window, period)
 
@@ -205,8 +203,10 @@ class TargetPriceThread:
         while(1) :
             for ticker in ticker_list:
                 df = binance.get_ohlcs(ticker, time_unit, window)
-                ma = df['close'].rolling(window=window).mean()
-                self.average[ticker] = ma.iloc[-1]
+                ma3 = df['close'].rolling(window=3).mean()
+                self.ma3[ticker] = ma3.iloc[-1]
+                ma6 = df['close'].rolling(window=6).mean()
+                self.ma6[ticker] = ma6.iloc[-1]
                 # 쉽게 문제를 해결해보자. 정확하게 같지 않다.
                 target = df['close'] + (df['high'] - df['low']) * LARRY_K
                 self.target_price[ticker] = target.iloc[-1]
@@ -252,7 +252,7 @@ if __name__ == "__main__":
     # 백그라운드 반복 실행
     # - 6 분에 이동평균을 업데이트한다
     # - 5 분에 한 번씩 포트 폴리오를 재선정한다
-    ma5h = TargetPriceThread(binance, ticker_list, "1m", 3, 360)
+    history = HistoryThread(binance, ticker_list, "1m", 3, 360)
     pf3m = PortFolioThread(binance, ticker_list, "1m", 3, 60 * 5)
 
 
@@ -270,21 +270,24 @@ if __name__ == "__main__":
             else:
                 disp = 'o'
             print("{:9>}-{}: 현재가:{:>4.2f} / 목표가:{:>4.2f}".format(
-                ticker, disp, current_price[ticker], ma5h.target_price[ticker]))
+                ticker, disp, current_price[ticker], history.target_price[ticker]))
 
             # 매수 조건
             # 1) 현재가가 목표가 이상
             # 3) 코인을 보유하지 않음
-            if (ma5h.target_price[ticker] <= current_price[ticker]) and binance.restriction[ticker]['hold'] is False:
+            if (history.target_price[ticker] <= current_price[ticker]) and (history.ma3[ticker] < current_price[ticker]) and (history.ma6[ticker] < current_price[ticker]) and (binance.restriction[ticker]['hold'] is False):
 
                 if DEBUG :
                     print("매수")
-                    print("{}: 현재가:{:>4.2f} / 목표가:{:>4.2f}".format(ticker, current_price[ticker], ma5h.target_price[ticker]))
+                    print("{}: 현재가:{:>4.2f} / 목표가:{:>4.2f}".format(ticker, current_price[ticker], history.target_price[ticker]))
                 else:
                     print(" ## {}: 매수".format(ticker))
                     price = current_price[ticker]
+
                     unit = binance.market_buy(ticker, price)
+
                     # 매도 주문을 1% 상승 가격에 걸어 놓는다.
-                    binance.sell_and_delay_cancel(ticker, price * 1.01, unit)
+                    order_id = binance.limit_sell(ticker, price * 1.01, unit)
+                    binance.delay_cancel(ticker, order_id)
 
         time.sleep(5)
