@@ -243,7 +243,7 @@ def try_buy(tickers, prices, targets, noises, mas, budget_per_coin, holdings, hi
                     time.sleep(INTERVAL)
                     holdings[ticker] = True
     except:
-        logger.info("try buy error ticker {} price {} target {} noise {} ma {} high {}".format(ticker, price, target, noise, ma, high))
+        logger.info("try buy error")
         pass
 
 
@@ -289,7 +289,7 @@ def try_sell(tickers):
                 else:
                     logger.info("SELL API CALLED {} {}".format(ticker, unit))
     except:
-        logger.info("try_sell error - ticker {} unit {}".format(ticker, unit))
+        logger.info("try_sell error")
         pass
 
 
@@ -331,7 +331,7 @@ def try_trailling_stop(tickers, prices, targets, noises, holdings, high_prices):
                         else:
                             logger.info("Trailing Stop {} {}".format(ticker, unit))
     except:
-        logger.info("try_trailing_stop error - ticker {} unit {}".format(ticker, unit))
+        logger.info("try_trailing_stop error")
         pass
 
 
@@ -396,7 +396,7 @@ def print_status(now, tickers, prices, targets, noises, mas, high_prices):
 
             print("{:<6} {:0.2f} 목표가: {:>8.0f} 이동평균: {:>8.0f} 현재가: {:>8.0f} 고가: {:>8.0f} 수익률: {:>3.1f}".format(ticker, noise, target, ma, price, high_price, gain))
     except:
-        logger.info("ticker {} noise {} target {} ma {} price {} high_price {} gain {}".format(ticker, noise, target, ma, price, high_price, gain))
+        logger.info("print_status error")
         pass
 
 
