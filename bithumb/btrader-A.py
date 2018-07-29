@@ -8,7 +8,8 @@
 import pybithumb
 import time
 import datetime
-
+import logging
+import logging.handlers
 
 MIN_ORDERS = {"BTC": 0.001, "ETH": 0.01, "DASH": 0.01, "LTC": 0.01, "ETC": 0.1, "XRP": 10, "BCH": 0.001,
               "XMR": 0.01, "ZEC": 0.01, "QTUM": 0.1, "BTG": 0.1, "EOS": 0.1, "ICX": 1, "VEN": 1, "TRX": 100,
@@ -25,13 +26,25 @@ DEBUG = False                                      # True: 매매 API 호출 안
 COIN_NUMS = 15                                      # 분산 투자 코인 개수 (자산/COIN_NUMS를 각 코인에 투자)
 LARRY_K = 0.5
 
-TRAILLING_STOP_MIN_PROOFIT = 0.5                    # 최소 40% 이상 수익이 발생한 경우에 Traillig Stop 동작
+TRAILLING_STOP_MIN_PROOFIT = 0.4                    # 최소 40% 이상 수익이 발생한 경우에 Traillig Stop 동작
 TRAILLING_STOP_GAP = 0.05                           # 최고점 대비 5% 하락시 매도
 
 DUAL_NOISE_LIMIT1 = 0.75                            # 듀얼 노이즈가 0.75 이하인 종목만 투자
 DUAL_NOISE_LIMIT2 = 0.65                            # 듀얼 노이즈 0.65~0.75 종목은 짧게 익절 및 손절
 MIN_PROFIT = 0.1                                    # 10% 이익이면 익절
 MAX_LOSS   = 0.05                                   # 5% 손실이면 손절
+
+
+#----------------------------------------------------------------------------------------------------------------------
+# Logging
+#----------------------------------------------------------------------------------------------------------------------
+logger = logging.getLogger("logger")
+logger.setLevel(logging.DEBUG)
+
+file_handler = logging.handlers.RotatingFileHandler("log.txt", maxBytes=100 * 1000000, backupCount=5)
+stream_handler = logging.StreamHandler()
+logger.addHandler(file_handler)
+logger.addHandler(stream_handler)
 
 
 # Load account
@@ -65,14 +78,14 @@ def make_setup_times(now):
     :return:
     '''
     tomorrow = now + datetime.timedelta(1)
-    midnight = datetime.datetime(year=tomorrow.year,
-                                 month=tomorrow.month,
-                                 day=tomorrow.day,
-                                 hour=0,
-                                 minute=1,
-                                 second=0)
-    midnight_after_10secs = midnight + datetime.timedelta(seconds=10)
-    return midnight, midnight_after_10secs
+    setup_time = datetime.datetime(year=tomorrow.year,
+                                   month=tomorrow.month,
+                                   day=tomorrow.day,
+                                   hour=0,
+                                   minute=1,
+                                   second=0)
+    setup_time_after_10secs = setup_time + datetime.timedelta(seconds=10)
+    return setup_time, setup_time_after_10secs
 
 
 def inquiry_cur_prices(tickers):
@@ -86,6 +99,7 @@ def inquiry_cur_prices(tickers):
         cur_prices = {ticker: int(all[ticker]['closing_price']) for ticker in tickers}
         return cur_prices
     except:
+        logger.info("inquiry_cur_prices error")
         return None
 
 
@@ -98,6 +112,7 @@ def cal_noise(tickers, window=5):
     '''
     try:
         noise_dict = {}
+
         for ticker in tickers:
             df = pybithumb.get_ohlcv(ticker)
             noise = 1 - abs(df['open'] - df['close']) / (df['high'] - df['low'])
@@ -106,14 +121,15 @@ def cal_noise(tickers, window=5):
 
         return noise_dict
     except:
+        logger.info("cal_noise error")
         return None
 
 
 def cal_target(ticker):
     '''
-    각 코인에 대한 목표가 저장
-    :param ticker: 티커, 'BTC'
-    :return: 목표가
+    각 코인에 대한 목표가 계산
+    :param ticker: 코인에 대한 티커
+    :return:
     '''
     try:
         df = pybithumb.get_ohlcv(ticker)
@@ -125,6 +141,7 @@ def cal_target(ticker):
         target = today_open + (yesterday_high - yesterday_low) * LARRY_K
         return target
     except:
+        logger.info("cal_target error {}".format(ticker))
         return None
 
 
@@ -136,9 +153,9 @@ def inquiry_high_prices(tickers):
             today = df.iloc[-1]
             today_high = today['high']
             high_prices[ticker] = today_high
-
         return high_prices
     except:
+        logger.info("inquiry_high_prices error")
         return  {ticker:0 for ticker in tickers}
 
 
@@ -168,13 +185,14 @@ def cal_moving_average(ticker="BTC", window=5):
         yesterday_ma = ma_series[-2]
         return yesterday_ma
     except:
+        logger.info("cal_moving_average error")
         return None
 
 
 def inquiry_moving_average(tickers):
     '''
-    각 코인에 대해 5일 이동평균값을 계산
-    :param tickers:
+    모든 코인에 대해 5일 이동평균값을 계산
+    :param tickers: 티커 리스트
     :return:
     '''
     mas = {}
@@ -184,15 +202,17 @@ def inquiry_moving_average(tickers):
     return mas
 
 
-def try_buy(tickers, prices, targets, noises, ma5s, budget_per_coin, holdings, high_prices):
+def try_buy(tickers, prices, targets, noises, mas, budget_per_coin, holdings, high_prices):
     '''
-    매수 조건 확인 및 매수 시도
-    :param portfolio: 당일 선정된 포트폴리오
-    :param prices: 각 코인에 대한 현재가
-    :param targets: 각 코인에 대한 목표가
-    :param ma5s: 5일 이동평균
-    :param budget_per_coin: 코인별 최대 투자 금액
-    :param holdings: 보유 여부
+    모든 가상화폐에 대해 매수 조건 확인 후 매수 시도
+    :param tickers: 티커 리스트
+    :param prices: 현재가 리스트
+    :param targets: 목표가 리스트
+    :param noises: noise 리스트
+    :param mas: 이동평균 리스트
+    :param budget_per_coin: 코인 당 투자 금액
+    :param holdings: 보유 여부 리스트
+    :param high_prices: 당일 고가 리스트
     :return:
     '''
     try:
@@ -200,8 +220,8 @@ def try_buy(tickers, prices, targets, noises, ma5s, budget_per_coin, holdings, h
             price = prices[ticker]              # 현재가
             target = targets[ticker]            # 목표가
             noise = noises[ticker]              # noise
-            ma5 = ma5s[ticker]                  # 5일 이동평균
-            high = high_prices[ticker]
+            ma = mas[ticker]                    # N일 이동평균
+            high = high_prices[ticker]          # 당일 고가
 
             # 매수 조건
             # 0) noise가 0.75 이하이고
@@ -209,20 +229,21 @@ def try_buy(tickers, prices, targets, noises, ma5s, budget_per_coin, holdings, h
             # 2) 당일 고가가 목표가 대비 2% 이상 오르지 않았으며 (프로그램을 장중에 실행했을 때 고점찍고 하락중인 종목을 사지 않기 위해)
             # 3) 현재가가 5일 이동평균 이상이고
             # 4) 해당 코인을 보유하지 않았을 때
-            if noise <= DUAL_NOISE_LIMIT1 and price >= target and high <= target * 1.02  and price >= ma5 and holdings[ticker] is False:
-                orderbook = pybithumb.get_orderbook(ticker)
-                asks = orderbook['asks']
-                sell_price = asks[0]['price']
-                unit = budget_per_coin/float(sell_price)
+            if holdings[ticker] is False:
+                if noise <= DUAL_NOISE_LIMIT1 and price >= target and price >= ma and high <= target * 1.02:
+                    orderbook = pybithumb.get_orderbook(ticker)
+                    asks = orderbook['asks']
+                    sell_price = asks[0]['price']
+                    unit = budget_per_coin/float(sell_price)
 
-                if DEBUG is False:
-                    bithumb.buy_market_order(ticker, unit)
-                else:
-                    print("BUY API CALLED", ticker, unit)
-
-                time.sleep(INTERVAL)
-                holdings[ticker] = True
+                    if DEBUG is False:
+                        bithumb.buy_market_order(ticker, unit)
+                    else:
+                        logger.info("BUY API CALLED {} {}".format(ticker, unit))
+                    time.sleep(INTERVAL)
+                    holdings[ticker] = True
     except:
+        logger.info("try buy error ticker {} price {} target {} noise {} ma {} high {}".format(ticker, price, target, noise, ma, high))
         pass
 
 
@@ -241,7 +262,7 @@ def retry_sell(ticker, unit, retry_cnt=10):
                 ret = bithumb.sell_market_order(ticker, unit)
                 time.sleep(INTERVAL)
             else:
-                print("SELL API CALLED", ticker, unit)
+                logger.info("SELL API CALLED {} {}".format(ticker, unit))
 
             retry_cnt = retry_cnt - 1
     except:
@@ -263,21 +284,22 @@ def try_sell(tickers):
                 if DEBUG is False:
                     ret = bithumb.sell_market_order(ticker, unit)
                     time.sleep(INTERVAL)
+                    if ret is None:
+                        retry_sell(ticker, unit, 10)
                 else:
-                    print("SELL API CALLED", ticker, unit)
-
-                if ret is None:
-                    retry_sell(ticker, unit, 10)
+                    logger.info("SELL API CALLED {} {}".format(ticker, unit))
     except:
+        logger.info("try_sell error - ticker {} unit {}".format(ticker, unit))
         pass
 
 
 def try_trailling_stop(tickers, prices, targets, noises, holdings, high_prices):
     '''
     trailling stop
-    :param tickers: ticker list
+    :param tickers: 티커 리스트
     :param prices: 현재가 리스트
     :param targets: 목표가 리스트
+    :param noises: noise 리스트
     :param holdings: 보유 여부 리스트
     :param high_prices: 각 코인에 대한 당일 최고가 리스트
     :return:
@@ -289,7 +311,7 @@ def try_trailling_stop(tickers, prices, targets, noises, holdings, high_prices):
             noise = noises[ticker]                          # noise
             high_price = high_prices[ticker]                # 당일 최고가
 
-            gain = (price - target) / target                # 이익률
+            gain = (price - target) / target                # 이익률 (매도가-매수가)/매수가
             gap_from_high = 1 - (price/high_price)          # 고점과 현재가 사이의 갭
 
             if holdings[ticker] is True:
@@ -302,14 +324,14 @@ def try_trailling_stop(tickers, prices, targets, noises, holdings, high_prices):
                         if DEBUG is False:
                             ret = bithumb.sell_market_order(ticker, unit)
                             time.sleep(INTERVAL)
+                            if ret is None:
+                                retry_sell(ticker, unit, 10)
+                            else:
+                                holdings[ticker] = False
                         else:
-                            print("trailing stop", ticker, unit)
-
-                        if ret is None:
-                            retry_sell(ticker, unit, 10)
-
-                        holdings[ticker] = False
+                            logger.info("Trailing Stop {} {}".format(ticker, unit))
     except:
+        logger.info("try_trailing_stop error - ticker {} unit {}".format(ticker, unit))
         pass
 
 
@@ -346,17 +368,20 @@ def update_high_prices(tickers, high_prices, cur_prices):
 
 def print_status(now, tickers, prices, targets, noises, mas, high_prices):
     '''
-    코인별 현재 상태를 출력
+    현재 상태를 출력
+    :param now: 현재 시간
     :param tickers: 티커 리스트
-    :param prices: 가격 리스트
+    :param prices: 현재가 리스트
     :param targets: 목표가 리스트
+    :param noises: noise 리스트
+    :param mas: moving average 리스트
     :param high_prices: 당일 고가 리스트
-    :param kvalues: k값 리스트
     :return:
     '''
     try:
         print("_" * 80)
         print(now)
+
         for ticker in tickers:
             noise = noises[ticker]
             target = targets[ticker]
@@ -366,11 +391,12 @@ def print_status(now, tickers, prices, targets, noises, mas, high_prices):
 
             gain = 0.0
             if high_price >= target and high_price >= ma and noise <= DUAL_NOISE_LIMIT1:
-                gain = (price - target) / target
+                gain = (price - target) / target                # (매도 - 매수)/매수
                 gain = gain * 100
 
             print("{:<6} {:0.2f} 목표가: {:>8.0f} 이동평균: {:>8.0f} 현재가: {:>8.0f} 고가: {:>8.0f} 수익률: {:>3.1f}".format(ticker, noise, target, ma, price, high_price, gain))
     except:
+        logger.info("ticker {} noise {} target {} ma {} price {} high_price {} gain {}".format(ticker, noise, target, ma, price, high_price, gain))
         pass
 
 
