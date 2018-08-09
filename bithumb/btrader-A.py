@@ -230,7 +230,7 @@ def try_buy(tickers, prices, targets, noises, mas, budget_per_coin, holdings, hi
             # 3) 현재가가 5일 이동평균 이상이고
             # 4) 해당 코인을 보유하지 않았을 때
             if holdings[ticker] is False:
-                if noise <= DUAL_NOISE_LIMIT1 and price >= target and price >= ma and high <= max(target, ma) * 1.02:
+                if noise <= DUAL_NOISE_LIMIT1 and price >= target and target >= ma and high <= target * 1.02:
                     orderbook = pybithumb.get_orderbook(ticker)
                     asks = orderbook['asks']
                     sell_price = asks[0]['price']
