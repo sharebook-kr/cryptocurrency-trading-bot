@@ -390,7 +390,7 @@ def print_status(now, tickers, prices, targets, noises, mas, high_prices):
             high_price = high_prices[ticker]
 
             gain = 0.0
-            if high_price >= target and high_price >= ma and noise <= DUAL_NOISE_LIMIT1:
+            if high_price >= target and target >= ma and noise <= DUAL_NOISE_LIMIT1:
                 gain = (price - target) / target                # (매도 - 매수)/매수
                 gain = gain * 100
 
