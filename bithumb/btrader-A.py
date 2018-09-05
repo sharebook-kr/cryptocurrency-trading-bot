@@ -15,7 +15,8 @@ MIN_ORDERS = {"BTC": 0.001, "ETH": 0.01, "DASH": 0.01, "LTC": 0.01, "ETC": 0.1, 
               "XMR": 0.01, "ZEC": 0.01, "QTUM": 0.1, "BTG": 0.1, "EOS": 0.1, "ICX": 1, "VEN": 1, "TRX": 100,
               "ELF": 10, "MITH": 10, "MCO": 10, "OMG": 0.1, "KNC": 1, "GNT": 10, "HSR": 1, "ZIL": 100,
               "ETHOS": 1, "PAY": 1, "WAX": 10, "POWR": 10, "LRC": 10, "GTO": 10, "STEEM": 10, "STRAT": 1,
-              "ZRX": 1, "REP": 0.1, "AE": 1, "XEM": 10, "SNT": 10, "ADA": 10}
+              "ZRX": 1, "REP": 0.1, "AE": 1, "XEM": 10, "SNT": 10, "ADA": 10, "PPT": 1, "CTXC": 10,
+              "CMT": 10, "THETA": 10, "WTC": 1, "ITC": 10}
 
 #----------------------------------------------------------------------------------------------------------------------
 # 아래의 값을 적당히 수정해서 사용하세요.
@@ -26,13 +27,8 @@ DEBUG = False                                      # True: 매매 API 호출 안
 COIN_NUMS = 15                                      # 분산 투자 코인 개수 (자산/COIN_NUMS를 각 코인에 투자)
 LARRY_K = 0.5
 
-TRAILLING_STOP_MIN_PROOFIT = 0.4                    # 최소 40% 이상 수익이 발생한 경우에 Traillig Stop 동작
 TRAILLING_STOP_GAP = 0.05                           # 최고점 대비 5% 하락시 매도
-
 DUAL_NOISE_LIMIT1 = 0.75                            # 듀얼 노이즈가 0.75 이하인 종목만 투자
-DUAL_NOISE_LIMIT2 = 0.65                            # 듀얼 노이즈 0.65~0.75 종목은 짧게 익절 및 손절
-MIN_PROFIT = 0.1                                    # 10% 이익이면 익절
-MAX_LOSS   = 0.05                                   # 5% 손실이면 손절
 
 
 #----------------------------------------------------------------------------------------------------------------------
@@ -229,8 +225,9 @@ def try_buy(tickers, prices, targets, noises, mas, budget_per_coin, holdings, hi
             # 2) 당일 고가가 목표가 대비 2% 이상 오르지 않았으며 (프로그램을 장중에 실행했을 때 고점찍고 하락중인 종목을 사지 않기 위해)
             # 3) 현재가가 5일 이동평균 이상이고
             # 4) 해당 코인을 보유하지 않았을 때
+            # 5) 현재가가 100원 이상
             if holdings[ticker] is False:
-                if noise <= DUAL_NOISE_LIMIT1 and price >= target and target >= ma and high <= target * 1.02:
+                if price >= 100 and noise <= DUAL_NOISE_LIMIT1 and price >= target and target >= ma and high <= target * 1.02:
                     orderbook = pybithumb.get_orderbook(ticker)
                     asks = orderbook['asks']
                     sell_price = asks[0]['price']
@@ -315,8 +312,7 @@ def try_trailling_stop(tickers, prices, targets, noises, holdings, high_prices):
             gap_from_high = 1 - (price/high_price)          # 고점과 현재가 사이의 갭
 
             if holdings[ticker] is True:
-                if (noise < DUAL_NOISE_LIMIT2 and gain >= TRAILLING_STOP_MIN_PROOFIT and gap_from_high >= TRAILLING_STOP_GAP) and \
-                   (noise >= DUAL_NOISE_LIMIT2 and (gain >= MIN_PROFIT or gain <= -MAX_LOSS)):
+                if gap_from_high >= TRAILLING_STOP_GAP:     # 고점대비 5% 이상 하락이면
                     unit = bithumb.get_balance(ticker)[0]
                     min_order = MIN_ORDERS.get(ticker, 0.001)
 
@@ -452,7 +448,7 @@ while True:
     if prices is not None:
         try_buy(tickers, prices, targets, noises, mas, budget_per_coin, holdings, high_prices)
 
-    # 매도 (익절)
+    # 익절/손절
     try_trailling_stop(tickers, prices, targets, noises, holdings, high_prices)
 
     time.sleep(INTERVAL)
