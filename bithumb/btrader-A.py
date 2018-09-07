@@ -27,7 +27,7 @@ DEBUG = False                                      # True: 매매 API 호출 안
 COIN_NUMS = 15                                      # 분산 투자 코인 개수 (자산/COIN_NUMS를 각 코인에 투자)
 LARRY_K = 0.5
 
-TRAILLING_STOP_GAP = 0.05                           # 최고점 대비 5% 하락시 매도
+GAIN = 0.3                                          # 30% 이상 이익시 50% 물량 익절
 DUAL_NOISE_LIMIT1 = 0.75                            # 듀얼 노이즈가 0.75 이하인 종목만 투자
 
 
@@ -290,30 +290,24 @@ def try_sell(tickers):
         pass
 
 
-def try_trailling_stop(tickers, prices, targets, noises, holdings, high_prices):
+def try_profit_cut(tickers, prices, targets, holdings):
     '''
     trailling stop
     :param tickers: 티커 리스트
     :param prices: 현재가 리스트
     :param targets: 목표가 리스트
-    :param noises: noise 리스트
     :param holdings: 보유 여부 리스트
-    :param high_prices: 각 코인에 대한 당일 최고가 리스트
     :return:
     '''
     try:
         for ticker in tickers:
             price = prices[ticker]                          # 현재가
             target = targets[ticker]                        # 매수가
-            noise = noises[ticker]                          # noise
-            high_price = high_prices[ticker]                # 당일 최고가
-
-            gain = (price - target) / target                # 이익률 (매도가-매수가)/매수가
-            gap_from_high = 1 - (price/high_price)          # 고점과 현재가 사이의 갭
+            gain = (price - target) / target                # 이익률: (매도가-매수가)/매수가
 
             if holdings[ticker] is True:
-                if gap_from_high >= TRAILLING_STOP_GAP:     # 고점대비 5% 이상 하락이면
-                    unit = bithumb.get_balance(ticker)[0]
+                if gain >= GAIN:
+                    unit = bithumb.get_balance(ticker)[0] / 2   # 50% 물량 매도
                     min_order = MIN_ORDERS.get(ticker, 0.001)
 
                     if unit >= min_order:
@@ -448,8 +442,8 @@ while True:
     if prices is not None:
         try_buy(tickers, prices, targets, noises, mas, budget_per_coin, holdings, high_prices)
 
-    # 익절/손절
-    try_trailling_stop(tickers, prices, targets, noises, holdings, high_prices)
+    # 익절
+    try_profit_cut(tickers, prices, targets, holdings)
 
     time.sleep(INTERVAL)
 
