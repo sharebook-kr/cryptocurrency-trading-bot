@@ -92,7 +92,7 @@ def inquiry_cur_prices(tickers):
     '''
     try:
         all = pybithumb.get_current_price("ALL")
-        cur_prices = {ticker: int(all[ticker]['closing_price']) for ticker in tickers}
+        cur_prices = {ticker: float(all[ticker]['closing_price']) for ticker in tickers}
         return cur_prices
     except:
         logger.info("inquiry_cur_prices error")
