@@ -22,6 +22,7 @@ while True:
             coin_size = upbit.get_balance(TICKER)
             upbit.sell_market_order(TICKER, coin_size)
             hold = False
+            break_out_range = None                      # 다음 목표가 갱신까지 매수되지 않도록
 
         time.sleep(10)
 
@@ -35,13 +36,13 @@ while True:
 
     # 매수 시도
     cur_price = pyupbit.get_current_price(TICKER)
-    if hold is False and cur_price is not None and cur_price >= break_out_range:
+    if hold is False and cur_price is not None and break_out_range is not None and cur_price >= break_out_range:
         krw_balance = upbit.get_balance(FIAT)
         upbit.buy_market_order(TICKER, krw_balance)
         hold = True
 
     # 상태 출력
-    manager.print_status(TICKER, hold, break_out_range, cur_price)
+    manager.print_status(now, TICKER, hold, break_out_range, cur_price)
     time.sleep(1)
 
 

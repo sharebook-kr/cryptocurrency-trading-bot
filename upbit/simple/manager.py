@@ -1,4 +1,5 @@
 import pyupbit
+import datetime
 
 
 def create_instance():
@@ -11,16 +12,17 @@ def create_instance():
     return inst
 
 
-def print_status(ticker, hold, break_out_range, cur_price):
+def print_status(now, ticker, hold, break_out_range, cur_price):
     if hold is True:
         status = "보유 중"
     else:
         status = "미보유 중"
-
-    print("코인: {:>10} 목표가: {:>8} 현재가: {:>8} {}".format(ticker, int(break_out_range), int(cur_price), status))
+    now = str(now)[:19]
+    print("{}    코인: {:>10} 목표가: {:>8} 현재가: {:>8} {}".format(now, ticker, int(break_out_range), int(cur_price), status))
 
 
 if __name__ == "__main__":
     inst = create_instance()
     print(inst.get_balance("KRW"))
-    print_status(True, 100.0, 90.0)
+    now = datetime.datetime.now()
+    print_status(now, "KRW-BTC", True, 100.0, 90.0)
