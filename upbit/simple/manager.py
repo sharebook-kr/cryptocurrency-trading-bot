@@ -17,8 +17,11 @@ def print_status(now, ticker, hold, break_out_range, cur_price):
         status = "보유 중"
     else:
         status = "미보유 중"
-    now = str(now)[:19]
-    print("{}    코인: {:>10} 목표가: {:>8} 현재가: {:>8} {}".format(now, ticker, int(break_out_range), int(cur_price), status))
+    try:
+        now = str(now)[:19]
+        print("{}    코인: {:>10} 목표가: {:>8} 현재가: {:>8} {}".format(now, ticker, int(break_out_range), int(cur_price), status))
+    except:
+        pass
 
 
 if __name__ == "__main__":
