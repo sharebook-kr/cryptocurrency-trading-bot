@@ -6,9 +6,9 @@ import manager
 import noise
 import betting
 
-TICKER = "KRW-BTC"  # 투자할 코인의 티커 입력
-FIAT = "KRW"  # Fiat
-NUM_COINS = 1  # 코인 수
+TICKER = "KRW-BTC"    # 투자할 코인의 티커 입력
+FIAT = "KRW"          # Fiat
+NUM_COINS = 1         # 코인 수
 
 # 주문을 위한 객체 생성
 upbit = manager.create_instance()
@@ -25,7 +25,7 @@ hold = False
 while True:
     now = datetime.datetime.now()
 
-    # 매도
+    # 매도 (08:50:00~08:50:10)
     if now.hour == 8 and now.minute == 50 and (0 <= now.second <= 10):
         if hold is True:
             coin_size = upbit.get_balance(TICKER)
