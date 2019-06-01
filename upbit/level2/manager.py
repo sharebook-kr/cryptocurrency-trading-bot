@@ -12,16 +12,17 @@ def create_instance():
     return inst
 
 
-def print_status(now, ticker, hold, break_out_range, cur_price):
+def print_status(now, ticker, hold, break_out_range, cur_price, betting):
     if hold is True:
         status = "보유 중"
     else:
         status = "미보유 중"
     try:
         now = str(now)[:19]
-        print("{}    코인: {:>10} 목표가: {:>8} 현재가: {:>8} {}".format(now, ticker, int(break_out_range), int(cur_price), status))
+        print("{}    코인: {:>8} 목표가: {:,} 현재가: {:,} 배팅율: {:.2f} {}".format(now, ticker, int(break_out_range), int(cur_price), betting, status))
     except:
         pass
+
 
 
 if __name__ == "__main__":
