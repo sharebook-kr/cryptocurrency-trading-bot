@@ -13,6 +13,7 @@ def set_break_out_range(ticker, status, hour):
 
     status[hour][1] = break_out_range                           # 해당 시간대 목표가 설정
     status[hour][2] = betting_ratio                             # 해당 시간대 베팅 비율
+    time.sleep(10)
 
 
 def try_sell(upbit, ticker, status, hour):
@@ -24,7 +25,6 @@ def try_sell(upbit, ticker, status, hour):
 
         status[hour][0] = False                                 # 해당 시간대 코인 보유 없음
         status[hour][3] = 0                                     # 해당 시간대 보유 코인 0
-        time.sleep(10)
 
 
 def try_buy(upbit, ticker, status):
